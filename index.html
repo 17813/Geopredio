@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GeoPredio Chile (CIPTech) - Tasador Territorial y Auditoría ACOP</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- html2pdf.js para exportar la Minuta Notarial A4 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    .crosshair-cursor { cursor: crosshair !important; }
+    .micro-vertex {
+      width: 14px !important;
+      height: 14px !important;
+      margin-left: -7px !important;
+      margin-top: -7px !important;
+      border-radius: 50%;
+      background: rgba(14, 165, 233, 0.4);
+      border: 2px solid #38bdf8;
+      box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
+      position: relative;
+    }
+    .micro-vertex::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 2px;
+      height: 2px;
+      background: #ffffff;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+    }
+    .micro-vertex-selected {
+      background: rgba(239, 68, 68, 0.6) !important;
+      border-color: #ef4444 !important;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 1) !important;
+    }
+    .cota-label {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    @media print {
+      body * { visibility: hidden; }
+      #notarialReportA4, #notarialReportA4 * { visibility: visible; }
+      #notarialReportA4 {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background: white !important;
+        color: black !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-sky-500 selection:text-white pb-12">
+
+  <!-- ENCABEZADO SUPERIOR TÉCNICO -->
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-[1000] px-3 py-2 sm:px-6 sm:py-3 shadow-md">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center font-black text-white text-lg shadow-inner">
+          ⚖️
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm sm:text-base font-bold text-white tracking-wide">GeoPredio Chile</h1>
+            <span class="text-[9px] bg-sky-500/10 text-sky-400 border border-sky-500/20 px-1.5 py-0.5 rounded font-mono font-semibold">
+              NORMA ACOP & SAG
+            </span>
+          </div>
+          <p class="text-[10px] text-slate-400 hidden sm:block">Tasador Territorial · Auditoría de Títulos · Agrimensura Satelital</p>
+        </div>
+      </div>
+
+      <!-- VALOR DE LA UF EN VIVO -->
+      <div class="flex items-center gap-3">
+        <div class="bg-slate-800/80 border border-slate-700/80 px-2.5 py-1 rounded-lg flex items-center gap-2">
+          <span class="text-[10px] font-bold text-slate-400">UF REF:</span>
+          <div class="flex items-center">
+            <span class="text-xs text-sky-400 font-mono font-bold">$</span>
+            <input 
+              id="inputValorUF" 
+              type="number" 
+              value="38500" 
+              step="50" 
+              oninput="recalcularTodo()" 
+              class="w-16 bg-transparent text-xs font-mono font-bold text-white focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <button onclick="exportarMinutaA4()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-lg transition active:scale-95">
+          <span>📄</span>
+          <span>Exportar Ficha A4</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- SELECTOR DE PESTAÑAS (DUAL TAB) -->
+  <div class="max-w-7xl mx-auto w-full px-3 pt-3">
+    <div class="grid grid-cols-2 gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+      <button id="tabBtnMap" onclick="switchTab('map')" class="py-2 rounded-lg bg-sky-600 text-white shadow flex items-center justify-center gap-1.5 transition">
+        <span>📍</span>
+        <span>Calculadora & Mapa Geodésico</span>
+      </button>
+      <button id="tabBtnAcop" onclick="switchTab('acop')" class="py-2 rounded-lg text-slate-400 hover:text-white flex items-center justify-center gap-1.5 transition relative">
+        <span>📋</span>
+        <span>Expediente Legal & Títulos (ACOP)</span>
+        <span id="acopProgressBadge" class="ml-1 text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded-full font-mono">
+          0%
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <!-- CONTENEDOR PRINCIPAL -->
+  <main class="max-w-7xl mx-auto w-full px-3 py-3 flex-1 flex flex-col gap-3">
+
+    <!-- SECCIÓN 1: CALCULADORA & MAPA SATELITAL -->
+    <div id="sectionMapTab" class="flex flex-col lg:grid lg:grid-cols-12 gap-3">
+      
+      <!-- COLUMNA MAPA Y VISOR -->
+      <div class="lg:col-span-8 flex flex-col gap-2">
+        
+        <!-- BARRA DE BÚSQUEDA HÍBRIDA (DIRECCIONES CHILE & COORDENADAS) -->
+        <div class="relative w-full z-[800]">
+          <div class="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-xl p-1 shadow-lg">
+            <span class="pl-2 text-slate-400 text-sm">🔍</span>
+            <input 
+              id="searchInput" 
+              type="text" 
+              placeholder="Escribe calle (ej: O'Higgins 500, Concepción) o pega coordenadas..." 
+              class="w-full bg-transparent text-white text-xs sm:text-sm px-2 py-1.5 focus:outline-none placeholder-slate-500"
+              oninput="handleAddressAutocomplete(this.value)"
+              onkeydown="if(event.key==='Enter') executeSearch()"
+            />
+            <button onclick="pasteFromClipboard()" title="Pegar del portapapeles" class="px-2 py-1 text-slate-400 hover:text-white bg-slate-800 rounded-lg text-xs">
+              📋
+            </button>
+            <button onclick="executeSearch()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition">
+              Ir
+            </button>
+          </div>
+
+          <!-- MENÚ DESPLEGABLE DE SUGERENCIAS DE CALLES (CHILE) -->
+          <div id="searchResultsDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[2000] max-h-56 overflow-y-auto text-xs">
+          </div>
+        </div>
+
+        <!-- VISOR CARTOGRÁFICO LEAFLET CON OVERZOOM 22X -->
+        <div class="relative w-full h-[460px] sm:h-[540px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-900">
+          <div id="map" class="w-full h-full crosshair-cursor"></div>
+
+          <!-- TOOLBAR FLOTANTE SOBRE EL MAPA -->
+          <div class="absolute top-3 left-3 z-[400] flex flex-wrap gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700/80 p-1.5 rounded-xl shadow-xl">
+            <button onclick="toggleTrazado()" id="btnTrazar" class="bg-sky-600 text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition">
+              <span>✏️</span>
+              <span id="txtTrazar">Trazar Terreno</span>
+            </button>
+            <button onclick="limpiarPoligono()" title="Borrar polígono" class="bg-slate-800 hover:bg-red-950 text-slate-300 hover:text-red-400 text-[11px] p-1.5 rounded-lg transition border border-slate-700">
+              🗑️
+            </button>
+            <button onclick="centrarEnGPS()" title="Geolocalización en vivo" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-[11px] px-2 py-1.5 rounded-lg transition border border-slate-700 flex items-center gap-1">
+              <span>🎯</span>
+              <span id="gpsStatus" class="font-mono text-[10px]">GPS</span>
+            </button>
+            
+            <!-- BOTÓN CARGA DIRECTA DE ORTOFOTO DE DRON -->
+            <label class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-[11px] px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer flex items-center gap-1 transition">
+              <span>📁</span>
+              <span>Subir Ortofoto</span>
+              <input type="file" id="dronDirectFileInput" accept="image/png, image/jpeg, image/webp" class="hidden" onchange="ejecutarCargaDirectaOrtofoto(event)">
+            </label>
+            <button id="btnQuitarOrtofoto" onclick="quitarOrtofotoDron()" class="hidden bg-red-950/40 text-red-400 border border-red-500/30 text-[11px] px-2 py-1.5 rounded-lg flex items-center gap-1 hover:bg-red-900 transition" title="Quitar ortofoto cargada">
+              <span>✖</span>
+            </button>
+          </div>
+
+          <!-- CONTROLES DE ORTOFOTO DE DRON -->
+          <div class="absolute bottom-3 left-3 z-[400] flex items-center gap-2 bg-slate-900/95 backdrop-blur border border-slate-700 px-3 py-1.5 rounded-xl shadow-xl text-xs">
+            <label class="flex items-center gap-1.5 cursor-pointer text-slate-200 font-medium">
+              <input type="checkbox" id="chkDron" onchange="toggleDronLayer()" class="rounded bg-slate-800 text-sky-500 focus:ring-0">
+              <span>🚁 Ortofoto Dron HD</span>
+            </label>
+            <input type="range" id="opacityDron" min="0" max="100" value="85" oninput="cambiarOpacidadDron(this.value)" class="w-20 accent-sky-500" title="Opacidad del vuelo de dron">
+            <span class="text-[10px] text-slate-400 font-mono">1.5cm/px</span>
+          </div>
+
+          <!-- MODO CIRUJANO: PAD DIRECCIONAL DE MICRO-AJUSTE (10cm - 20cm - 50cm) -->
+          <div class="absolute bottom-3 right-3 z-[400] bg-slate-900/95 backdrop-blur border border-slate-700 p-2 rounded-2xl shadow-2xl flex flex-col items-center gap-1">
+            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Ajuste Fino</div>
+            <div class="flex items-center gap-1 text-[9px] mb-1">
+              <button onclick="setNudgeStep(0.1)" id="step10" class="px-1.5 py-0.5 rounded bg-sky-600 text-white font-mono font-bold">10cm</button>
+              <button onclick="setNudgeStep(0.2)" id="step20" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">20cm</button>
+              <button onclick="setNudgeStep(0.5)" id="step50" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">50cm</button>
+            </div>
+            
+            <button onclick="nudgeSelectedVertex('N')" class="w-8 h-7 bg-slate-800 hover:bg-slate-700 active:bg-sky-600 rounded-lg flex items-center justify-center text-xs font-bold shadow">▲</button>
+            <div class="flex gap-1">
+              <button onclick="nudgeSelectedVertex('W')" class="w-8 h-7 bg-slate-800 hover:bg-slate-700 active:bg-sky-600 rounded-lg flex items-center justify-center text-xs font-bold shadow">◄</button>
+              <button onclick="snapToCurrentGPS()" title="Alinear poste con GPS de terreno" class="w-8 h-7 bg-emerald-600/30 text-emerald-400 border border-emerald-500/50 rounded-lg flex items-center justify-center text-[10px] font-bold shadow">📍</button>
+              <button onclick="nudgeSelectedVertex('E')" class="w-8 h-7 bg-slate-800 hover:bg-slate-700 active:bg-sky-600 rounded-lg flex items-center justify-center text-xs font-bold shadow">►</button>
+            </div>
+            <button onclick="nudgeSelectedVertex('S')" class="w-8 h-7 bg-slate-800 hover:bg-slate-700 active:bg-sky-600 rounded-lg flex items-center justify-center text-xs font-bold shadow">▼</button>
+            <div class="text-[8px] text-slate-400 mt-0.5" id="lblSelectedVertex">V1 activo</div>
+          </div>
+        </div>
+
+        <!-- RESUMEN EN VIVO DE METRAJE Y NORMATIVA SAG/DOM -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-center">
+          <div>
+            <div class="text-[10px] text-slate-400">Superficie Terreno</div>
+            <div id="statAreaM2" class="text-sm sm:text-base font-bold text-white font-mono">0.00 m²</div>
+            <div id="statAreaHa" class="text-[10px] text-sky-400 font-mono">0.0000 ha</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-400">Perímetro Total</div>
+            <div id="statPerimeter" class="text-sm sm:text-base font-bold text-white font-mono">0.00 m</div>
+            <div id="statVertices" class="text-[10px] text-slate-400">0 vértices</div>
+          </div>
+          <div class="col-span-2 flex flex-col justify-center items-center p-1 rounded-lg border" id="boxNormativeStatus">
+            <span id="badgeNormative" class="text-xs font-bold px-2 py-0.5 rounded-full font-mono bg-slate-800 text-slate-400">
+              Esperando trazado
+            </span>
+            <span id="descNormative" class="text-[10px] text-slate-400 mt-1">Traza el polígono en el satélite</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- COLUMNA PARÁMETROS, TASACIÓN Y COMISIÓN -->
+      <div class="lg:col-span-4 flex flex-col gap-3">
+        
+        <!-- SELECTOR DE TIPOLOGÍA -->
+        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-lg">
+          <label class="text-[11px] font-bold text-slate-300 block mb-1">Tipología Inmobiliaria</label>
+          <select id="propertyType" onchange="cambiarTipologia(this.value)" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs font-semibold text-white focus:outline-none focus:ring-2 focus:ring-sky-500">
+            <option value="rural">Parcela Rural (D.L. 3.516 SAG)</option>
+            <option value="urbano">Sitio / Lote Urbano (PRC / OGUC)</option>
+            <option value="casa">Casa Urbana (DOM + Ley 20.898)</option>
+            <option value="depto">Departamento (Ley 21.442 Copropiedad)</option>
+          </select>
+        </div>
+
+        <!-- FORMULARIO PARAMÉTRICO DE TASACIÓN -->
+        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-lg flex flex-col gap-2.5 text-xs">
+          <div class="flex items-center justify-between pb-1 border-b border-slate-800">
+            <span class="font-bold text-slate-200">Parámetros de Valoración</span>
+            <span class="text-[10px] text-sky-400 font-mono">UF / m²</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-slate-400 block text-[10px]">Valor Suelo (UF/m²)</label>
+              <input type="number" id="valSueloUF" value="0.25" step="0.05" oninput="recalcularTodo()" class="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono">
+            </div>
+            <div>
+              <label class="text-slate-400 block text-[10px]">Construcción (UF/m²)</label>
+              <input type="number" id="valConstUF" value="18.0" step="0.5" oninput="recalcularTodo()" class="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono">
+            </div>
+          </div>
+
+          <!-- CAMPOS SEGÚN TIPOLOGÍA -->
+          <div id="fieldsEdificacion" class="grid grid-cols-2 gap-2 pt-1 hidden">
+            <div>
+              <label class="text-slate-400 block text-[10px]">DOM Recepcionado (m²)</label>
+              <input type="number" id="m2DOM" value="0" step="1" oninput="recalcularTodo()" class="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono">
+            </div>
+            <div>
+              <label class="text-slate-400 block text-[10px]">Sin Recepción / Ley 20.898</label>
+              <input type="number" id="m2NoReg" value="0" step="1" oninput="recalcularTodo()" class="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono">
+            </div>
+          </div>
+
+          <!-- TASACIÓN ESTIMADA RESULTANTE -->
+          <div class="bg-slate-950/80 border border-slate-800 p-2.5 rounded-lg mt-1 flex flex-col gap-1">
+            <div class="flex justify-between items-baseline">
+              <span class="text-[11px] font-bold text-slate-300">Tasación Estimada:</span>
+              <span id="tasacionTotalUF" class="text-base font-black text-sky-400 font-mono">0.00 UF</span>
+            </div>
+            <div class="flex justify-between text-[11px] font-mono text-slate-400">
+              <span>Equivalente en CLP:</span>
+              <span id="tasacionTotalCLP" class="font-bold text-white">$0 CLP</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- MÓDULO DE HONORARIOS Y COMISIÓN DE CORRETAJE -->
+        <div class="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl shadow-xl flex flex-col gap-2.5 text-xs">
+          <div class="flex items-center justify-between pb-1 border-b border-slate-800">
+            <div class="flex items-center gap-1.5">
+              <span class="text-emerald-400 text-sm">💼</span>
+              <span class="font-bold text-white text-[11px]">Comisión Corredor</span>
+            </div>
+            <span class="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono">
+              2% + 2% Estándar Chile
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-slate-400 block text-[10px]">Modalidad Cobro</label>
+              <select id="comisionMode" onchange="recalcularTodo()" class="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white text-[11px]">
+                <option value="ambas_partes" selected>Ambas Partes (4%)</option>
+                <option value="solo_vendedor">Solo Vendedor (2%)</option>
+                <option value="solo_comprador">Solo Comprador (2%)</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-slate-400 block text-[10px]">Régimen Tributario</label>
+              <select id="tipoDocComision" onchange="recalcularTodo()" class="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white text-[11px]">
+                <option value="iva" selected>Factura con IVA (19%)</option>
+                <option value="retencion">Boleta Honorarios</option>
+                <option value="exento">Líquido Pactado</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5 pt-1 text-center font-mono">
+            <div class="bg-slate-800/60 p-1.5 rounded">
+              <div class="text-[9px] text-slate-400">Total Honorarios</div>
+              <div id="comisionTotalCLP" class="text-xs font-bold text-emerald-400">$0 CLP</div>
+              <div id="comisionTotalUF" class="text-[9px] text-slate-300">0.00 UF</div>
+            </div>
+            <div class="bg-slate-800/60 p-1.5 rounded">
+              <div class="text-[9px] text-slate-400">Líquido Vendedor</div>
+              <div id="liquidoVendedorCLP" class="text-xs font-bold text-sky-400">$0 CLP</div>
+              <div id="liquidoVendedorUF" class="text-[9px] text-slate-300">0.00 UF</div>
+            </div>
+          </div>
+
+          <button onclick="enviarWhatsAppResumen()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-semibold py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow transition">
+            <span>💬</span>
+            <span>Compartir Ficha por WhatsApp</span>
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- SECCIÓN 2: EXPEDIENTE LEGAL & TÍTULOS (ACOP DUE DILIGENCE) -->
+    <div id="sectionAcopTab" class="hidden flex flex-col gap-3">
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex flex-col gap-4">
+        
+        <div class="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800 gap-2">
+          <div>
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <span>📋</span> Auditoría Legal y Estudio de Títulos ACOP
+            </h2>
+            <p class="text-xs text-slate-400">Pauta técnica oficial para blindaje bancario, conservador y notaría</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <div class="text-[10px] text-slate-400">Cumplimiento Auditoría</div>
+              <div id="acopAuditPercent" class="text-lg font-black text-amber-400 font-mono">0%</div>
+            </div>
+            <div class="w-24 bg-slate-800 h-2.5 rounded-full overflow-hidden border border-slate-700">
+              <div id="acopAuditBar" class="bg-amber-400 h-full w-0 transition-all duration-300"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MÓDULOS DEL CHECKLIST ACOP -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          
+          <!-- MÓDULO 1: CBR & DOMINIO 10 AÑOS -->
+          <div class="bg-slate-800/40 border border-slate-800 p-3 rounded-xl flex flex-col gap-2">
+            <span class="font-bold text-sky-400">1. Conservador de Bienes Raíces (CBR) - 10 Años</span>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Copia de Dominio Vigente (vigencia no mayor a 30 días)</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Certificado de Hipotecas, Gravámenes y Prohibiciones (GP 30 años)</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Títulos anteriores que completen 10 años continuos de posesión</span>
+            </label>
+          </div>
+
+          <!-- MÓDULO 2: DEUDAS TGR, MUNICIPAL Y EXPROPIACIONES -->
+          <div class="bg-slate-800/40 border border-slate-800 p-3 rounded-xl flex flex-col gap-2">
+            <span class="font-bold text-sky-400">2. Gravámenes Fiscales y Expropiaciones</span>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Certificado de No Deuda de Contribuciones (Tesorería General / TGR)</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Certificado de No Expropiación Municipal (DOM al día)</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Certificado de No Expropiación SERVIU / MOP</span>
+            </label>
+          </div>
+
+          <!-- MÓDULO 3: PREDIOS RURALES Y AGUAS -->
+          <div class="bg-slate-800/40 border border-slate-800 p-3 rounded-xl flex flex-col gap-2">
+            <span class="font-bold text-sky-400">3. Módulo Agrícola & Aguas (Rural)</span>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Plano de Subdivisión Aprobado y Certificado por el SAG</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Inscripción de Derechos de Aprovechamiento de Aguas en Registro de Aguas CBR</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Certificado de No Deuda CORA / INDAP</span>
+            </label>
+          </div>
+
+          <!-- MÓDULO 4: HERENCIAS O PERSONAS JURÍDICAS -->
+          <div class="bg-slate-800/40 border border-slate-800 p-3 rounded-xl flex flex-col gap-2">
+            <span class="font-bold text-sky-400">4. Transmisiones y Personería</span>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Posesión Efectiva e Inscripción Especial de Herencia (si aplica sucesión)</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Vigencia de Poderes y Personería de la Sociedad Vendedora (si aplica)</span>
+            </label>
+            <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" class="acop-check mt-0.5 rounded bg-slate-800" onchange="evaluarAcop()">
+              <span>Certificado de Matrimonio del vendedor y régimen patrimonial acreditado</span>
+            </label>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- PLANTILLA PARA IMPRESIÓN / DESCARGA A4 NOTARIAL -->
+  <div id="notarialReportA4" class="hidden p-8 bg-white text-slate-900 font-serif leading-relaxed max-w-[800px] mx-auto text-xs">
+    <div class="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-end">
+      <div>
+        <h1 class="text-xl font-bold uppercase tracking-wide">Ficha Técnica Territorial y Estudio de Títulos</h1>
+        <p class="text-[10px] text-slate-600 font-sans">GEOPREDIO CHILE · AUDITORÍA BAJO ESTÁNDAR NOTARIAL, CONSERVADOR Y ACOP</p>
+      </div>
+      <div class="text-right font-mono text-[10px]">
+        <div>FECHA: <span id="repFecha"></span></div>
+        <div>DATUM: WGS84 · HUSO 18S/19S</div>
+      </div>
+    </div>
+
+    <p class="mb-4 border border-amber-300 bg-amber-50 p-2 text-[9px] text-slate-700 font-sans">
+      Documento referencial basado en los datos ingresados. No constituye una tasación comercial formal, un levantamiento topográfico certificado ni un estudio jurídico de títulos.
+    </p>
+
+    <!-- CLÁUSULA NOTARIAL CONTINUA -->
+    <div class="mb-4">
+      <h2 class="font-bold uppercase text-[11px] border-b pb-1 mb-2 font-sans">I. Cláusula de Deslindes Cardinales Geodésicos</h2>
+      <p id="repClausulaNotarial" class="text-justify italic text-[11px] leading-normal bg-slate-50 p-3 border rounded">
+        Esperando polígono...
+      </p>
+    </div>
+
+    <!-- CUADRO DE METRAJES Y TASACIÓN -->
+    <div class="mb-4">
+      <h2 class="font-bold uppercase text-[11px] border-b pb-1 mb-2 font-sans">II. Determinación de Cabida y Valoración</h2>
+      <table class="w-full border-collapse border border-slate-300 text-[10px] font-sans">
+        <tr class="bg-slate-100 font-bold">
+          <td class="border border-slate-300 p-1.5">Superficie Terreno</td>
+          <td class="border border-slate-300 p-1.5">Perímetro</td>
+          <td class="border border-slate-300 p-1.5">Tasación Total UF</td>
+          <td class="border border-slate-300 p-1.5">Equivalente CLP</td>
+        </tr>
+        <tr>
+          <td id="repArea" class="border border-slate-300 p-1.5 font-mono">0.00 m²</td>
+          <td id="repPerim" class="border border-slate-300 p-1.5 font-mono">0.00 m</td>
+          <td id="repTasacionUF" class="border border-slate-300 p-1.5 font-mono font-bold">0.00 UF</td>
+          <td id="repTasacionCLP" class="border border-slate-300 p-1.5 font-mono font-bold">$0 CLP</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- CUADRO DE COMISIONES E INSTRUCCIÓN NOTARIAL -->
+    <div class="mb-4">
+      <h2 class="font-bold uppercase text-[11px] border-b pb-1 mb-2 font-sans">III. Instrucción Notarial de Honorarios de Corretaje</h2>
+      <table class="w-full border-collapse border border-slate-300 text-[10px] font-sans">
+        <tr class="bg-slate-100 font-bold">
+          <td class="border border-slate-300 p-1.5">Comisión Pactada</td>
+          <td class="border border-slate-300 p-1.5">Régimen</td>
+          <td class="border border-slate-300 p-1.5">Honorarios Corredor</td>
+          <td class="border border-slate-300 p-1.5">Líquido a Percibir por Vendedor</td>
+        </tr>
+        <tr>
+          <td id="repModoComision" class="border border-slate-300 p-1.5">2% + 2%</td>
+          <td id="repRegimenComision" class="border border-slate-300 p-1.5">IVA 19%</td>
+          <td id="repComisionTotal" class="border border-slate-300 p-1.5 font-mono font-bold">$0 CLP</td>
+          <td id="repLiquidoVendedor" class="border border-slate-300 p-1.5 font-mono font-bold">$0 CLP</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- EXPEDIENTE DE TÍTULOS ACOP -->
+    <div class="mb-6">
+      <h2 class="font-bold uppercase text-[11px] border-b pb-1 mb-2 font-sans">IV. Certificación Documental ACOP</h2>
+      <div id="repAcopStatus" class="p-2 border rounded font-mono text-[10px] bg-slate-50">
+        Cumplimiento documental: 0% auditado.
+      </div>
+    </div>
+
+    <!-- FIRMAS FORMALES -->
+    <div class="grid grid-cols-2 gap-12 mt-12 pt-6 border-t border-slate-300 text-center font-sans text-[10px]">
+      <div>
+        <div class="border-t border-slate-400 w-44 mx-auto pt-1 font-bold">FIRMA PERITO / TASADOR</div>
+        <div class="text-slate-500 text-[9px]">Registro de Agrimensura Territorial</div>
+      </div>
+      <div>
+        <div class="border-t border-slate-400 w-44 mx-auto pt-1 font-bold">FIRMA CORREDOR / CLIENTE</div>
+        <div class="text-slate-500 text-[9px]">Aceptación de Deslindes y Minuta</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LÓGICA DE PROGRAMACIÓN EN JAVASCRIPT -->
+  <script>
+    let map = null;
+    let baseLayer = null;
+    let dronLayer = null;
+    let capaOrtofotoLocal = null;
+    let vertices = [];
+    let polygonLayer = null;
+    let cotaLayers = [];
+    let isDrawing = false;
+    let selectedVertexIndex = 0;
+    let nudgeStepMeters = 0.10; // 10 cm por defecto
+
+    // Coordenadas iniciales (Concepción / San Pedro de la Paz, Biobío)
+    const INIT_LAT = -36.8378;
+    const INIT_LNG = -73.0789;
+
+    window.onload = function() {
+      map = L.map('map', {
+        maxZoom: 22,
+        zoomControl: false
+      }).setView([INIT_LAT, INIT_LNG], 17);
+
+      L.control.zoom({ position: 'topright' }).addTo(map);
+
+      // Satélite ESRI World Imagery HD con Overzoom forzado a nivel 22
+      baseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Esri, Maxar, Earthstar Geographics',
+        maxZoom: 22,
+        maxNativeZoom: 19
+      }).addTo(map);
+
+      dronLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 22,
+        maxNativeZoom: 19,
+        opacity: 0.85
+      });
+
+      map.on('click', function(e) {
+        if (isDrawing) {
+          agregarVertice(e.latlng);
+        }
+      });
+
+      initDemoPolygon();
+      recalcularTodo();
+      evaluarAcop();
+    };
+
+    function toggleTrazado() {
+      isDrawing = !isDrawing;
+      const btn = document.getElementById('btnTrazar');
+      const txt = document.getElementById('txtTrazar');
+      if (isDrawing) {
+        btn.classList.replace('bg-sky-600', 'bg-emerald-600');
+        txt.innerText = 'Finalizar Marcado';
+      } else {
+        btn.classList.replace('bg-emerald-600', 'bg-sky-600');
+        txt.innerText = 'Trazar Terreno';
+      }
+    }
+
+    function agregarVertice(latlng) {
+      vertices.push(latlng);
+      selectedVertexIndex = vertices.length - 1;
+      actualizarPoligono();
+    }
+
+    function initDemoPolygon() {
+      // Parcela rectangular demo de 5.240 m² (Cumple D.L. 3.516)
+      vertices = [
+        L.latLng(-36.83720, -73.07920),
+        L.latLng(-36.83725, -73.07830),
+        L.latLng(-36.83785, -73.07840),
+        L.latLng(-36.83780, -73.07930)
+      ];
+      selectedVertexIndex = 0;
+      actualizarPoligono();
+    }
+
+    function limpiarPoligono() {
+      vertices = [];
+      cotaLayers.forEach(l => map.removeLayer(l));
+      cotaLayers = [];
+      if (polygonLayer) map.removeLayer(polygonLayer);
+      polygonLayer = null;
+      actualizarPoligono();
+    }
+
+    function actualizarPoligono() {
+      if (polygonLayer) map.removeLayer(polygonLayer);
+      cotaLayers.forEach(l => map.removeLayer(l));
+      cotaLayers = [];
+
+      if (vertices.length === 0) {
+        document.getElementById('statAreaM2').innerText = '0.00 m²';
+        document.getElementById('statAreaHa').innerText = '0.0000 ha';
+        document.getElementById('statPerimeter').innerText = '0.00 m';
+        document.getElementById('statVertices').innerText = '0 vértices';
+        recalcularTodo();
+        return;
+      }
+
+      polygonLayer = L.polygon(vertices, {
+        color: '#38bdf8',
+        weight: 2,
+        fillColor: '#0284c7',
+        fillOpacity: 0.25
+      }).addTo(map);
+
+      vertices.forEach((v, index) => {
+        const isSelected = (index === selectedVertexIndex);
+        const icon = L.divIcon({
+          className: 'custom-pin',
+          html: `<div class="micro-vertex ${isSelected ? 'micro-vertex-selected' : ''}" title="Vértice ${index + 1}"></div>`
+        });
+
+        const marker = L.marker(v, { icon: icon, draggable: true }).addTo(map);
+        marker.on('click', () => {
+          selectedVertexIndex = index;
+          actualizarPoligono();
+        });
+        marker.on('drag', (e) => {
+          vertices[index] = e.target.getLatLng();
+          actualizarPoligono();
+        });
+        cotaLayers.push(marker);
+
+        const nextIndex = (index + 1) % vertices.length;
+        if (vertices.length > 1) {
+          const vNext = vertices[nextIndex];
+          const dist = calcularDistanciaGeodesica(v.lat, v.lng, vNext.lat, vNext.lng);
+          const midLat = (v.lat + vNext.lat) / 2;
+          const midLng = (v.lng + vNext.lng) / 2;
+
+          const cotaLabel = L.marker([midLat, midLng], {
+            icon: L.divIcon({
+              className: 'cota-container',
+              html: `<span class="cota-label">${dist.toFixed(1)}m</span>`
+            })
+          }).addTo(map);
+          cotaLayers.push(cotaLabel);
+        }
+      });
+
+      document.getElementById('lblSelectedVertex').innerText = `V${selectedVertexIndex + 1} activo`;
+      calcularGeodesia();
+      recalcularTodo();
+    }
+
+    function calcularDistanciaGeodesica(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function calcularGeodesia() {
+      if (vertices.length < 3) return;
+
+      let area = 0;
+      const len = vertices.length;
+      for (let i = 0; i < len; i++) {
+        const j = (i + 1) % len;
+        const xi = vertices[i].lng * (Math.PI / 180) * 6378137 * Math.cos(vertices[i].lat * (Math.PI / 180));
+        const yi = vertices[i].lat * (Math.PI / 180) * 6378137;
+        const xj = vertices[j].lng * (Math.PI / 180) * 6378137 * Math.cos(vertices[j].lat * (Math.PI / 180));
+        const yj = vertices[j].lat * (Math.PI / 180) * 6378137;
+        area += (xi * yj - xj * yi);
+      }
+      area = Math.abs(area / 2);
+
+      let perim = 0;
+      for (let i = 0; i < len; i++) {
+        const j = (i + 1) % len;
+        perim += calcularDistanciaGeodesica(vertices[i].lat, vertices[i].lng, vertices[j].lat, vertices[j].lng);
+      }
+
+      document.getElementById('statAreaM2').innerText = area.toFixed(2) + ' m²';
+      document.getElementById('statAreaHa').innerText = (area / 10000).toFixed(4) + ' ha';
+      document.getElementById('statPerimeter').innerText = perim.toFixed(2) + ' m';
+      document.getElementById('statVertices').innerText = `${len} vértices`;
+
+      const badge = document.getElementById('badgeNormative');
+      const desc = document.getElementById('descNormative');
+      const box = document.getElementById('boxNormativeStatus');
+
+      const tipo = document.getElementById('propertyType').value;
+      if (tipo === 'rural') {
+        if (area >= 5000) {
+          badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+          badge.innerText = 'CUMPLE SAG D.L. 3.516';
+          desc.innerText = `Cabida legal suficiente (+${(area - 5000).toFixed(0)} m²)`;
+          box.className = 'col-span-2 flex flex-col justify-center items-center p-1 rounded-lg border border-emerald-500/30 bg-emerald-950/20';
+        } else {
+          badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full font-mono bg-red-500/20 text-red-400 border border-red-500/30';
+          badge.innerText = 'NO CUMPLE SAG';
+          desc.innerText = `Déficit de ${(5000 - area).toFixed(0)} m² para rol propio`;
+          box.className = 'col-span-2 flex flex-col justify-center items-center p-1 rounded-lg border border-red-500/30 bg-red-950/20';
+        }
+      } else {
+        badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full font-mono bg-sky-500/20 text-sky-400 border border-sky-500/30';
+        badge.innerText = 'ZONA URBANA';
+        desc.innerText = 'Sujeto a normas del PRC y la DOM';
+        box.className = 'col-span-2 flex flex-col justify-center items-center p-1 rounded-lg border border-sky-500/30 bg-sky-950/20';
+      }
+    }
+
+    function setNudgeStep(meters) {
+      nudgeStepMeters = meters;
+      ['step10', 'step20', 'step50'].forEach(id => {
+        document.getElementById(id).classList.replace('bg-sky-600', 'bg-slate-800');
+        document.getElementById(id).classList.replace('text-white', 'text-slate-300');
+      });
+      const activeId = meters === 0.1 ? 'step10' : (meters === 0.2 ? 'step20' : 'step50');
+      document.getElementById(activeId).classList.replace('bg-slate-800', 'bg-sky-600');
+      document.getElementById(activeId).classList.replace('text-slate-300', 'text-white');
+    }
+
+    function nudgeSelectedVertex(direction) {
+      if (vertices.length === 0) return;
+      const v = vertices[selectedVertexIndex];
+      const deltaLat = (nudgeStepMeters / 111320);
+      const deltaLng = (nudgeStepMeters / (111320 * Math.cos(v.lat * Math.PI / 180)));
+
+      if (direction === 'N') v.lat += deltaLat;
+      if (direction === 'S') v.lat -= deltaLat;
+      if (direction === 'E') v.lng += deltaLng;
+      if (direction === 'W') v.lng -= deltaLng;
+
+      actualizarPoligono();
+    }
+
+    function snapToCurrentGPS() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          if (vertices.length > 0) {
+            vertices[selectedVertexIndex] = L.latLng(pos.coords.latitude, pos.coords.longitude);
+            actualizarPoligono();
+          }
+        });
+      }
+    }
+
+    // CARGA DIRECTA DE ORTOFOTO EN MEMORIA
+    function ejecutarCargaDirectaOrtofoto(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const dataUrl = e.target.result;
+        if (capaOrtofotoLocal) map.removeLayer(capaOrtofotoLocal);
+
+        let bounds;
+        if (vertices.length >= 2) {
+          bounds = L.latLngBounds(vertices).pad(0.15);
+        } else {
+          bounds = map.getBounds();
+        }
+
+        const opacidad = (document.getElementById('opacityDron')?.value || 85) / 100;
+        capaOrtofotoLocal = L.imageOverlay(dataUrl, bounds, {
+          opacity: opacidad,
+          interactive: true,
+          zIndex: 500
+        }).addTo(map);
+
+        map.fitBounds(bounds, { maxZoom: 21 });
+        document.getElementById('btnQuitarOrtofoto')?.classList.remove('hidden');
+        document.getElementById('chkDron').checked = true;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function quitarOrtofotoDron() {
+      if (capaOrtofotoLocal) {
+        map.removeLayer(capaOrtofotoLocal);
+        capaOrtofotoLocal = null;
+        document.getElementById('btnQuitarOrtofoto')?.classList.add('hidden');
+        document.getElementById('dronDirectFileInput').value = '';
+      }
+    }
+
+    // BUSCADOR UNIVERSAL
+    let searchTimeout = null;
+
+    async function handleAddressAutocomplete(query) {
+      const dropdown = document.getElementById('searchResultsDropdown');
+      if (!query || query.trim().length < 3) {
+        dropdown.classList.add('hidden');
+        return;
+      }
+
+      if (/^-?\d+(\.\d+)?[\s,]+-?\d+(\.\d+)?/.test(query.trim())) {
+        dropdown.classList.add('hidden');
+        return;
+      }
+
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=cl&limit=5&addressdetails=1`);
+          const data = await res.json();
+          if (data && data.length > 0) {
+            dropdown.replaceChildren();
+            data.forEach(item => {
+              const option = document.createElement('button');
+              option.type = 'button';
+              option.className = 'w-full p-2.5 hover:bg-slate-800 cursor-pointer border-b border-slate-800 text-slate-200 text-left flex items-center gap-2';
+
+              const icon = document.createElement('span');
+              icon.className = 'text-sky-400';
+              icon.textContent = '📍';
+              const label = document.createElement('span');
+              label.className = 'truncate';
+              label.textContent = item.display_name;
+
+              option.append(icon, label);
+              option.addEventListener('click', () => selectAddressResult(item.lat, item.lon, item.display_name));
+              dropdown.appendChild(option);
+            });
+            dropdown.classList.remove('hidden');
+          } else {
+            dropdown.classList.add('hidden');
+          }
+        } catch (e) {
+          dropdown.classList.add('hidden');
+        }
+      }, 350);
+    }
+
+    function selectAddressResult(lat, lon, displayName) {
+      lat = Number(lat);
+      lon = Number(lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+      document.getElementById('searchInput').value = displayName;
+      document.getElementById('searchResultsDropdown').classList.add('hidden');
+      map.flyTo([lat, lon], 20, { duration: 1.5 });
+      L.popup().setLatLng([lat, lon]).setContent(`<b>${displayName}</b>`).openOn(map);
+    }
+
+    function executeSearch() {
+      const q = document.getElementById('searchInput').value.trim();
+      document.getElementById('searchResultsDropdown').classList.add('hidden');
+      
+      const match = q.match(/^\s*(-?\d+(?:\.\d+)?)[\s,]+(-?\d+(?:\.\d+)?)\s*$/);
+      if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+          alert('Coordenadas fuera de rango. Latitud: -90 a 90; longitud: -180 a 180.');
+          return;
+        }
+        map.flyTo([lat, lng], 20, { duration: 1.5 });
+        L.popup().setLatLng([lat, lng]).setContent(`<b>Coordenadas:</b><br>${lat.toFixed(6)}, ${lng.toFixed(6)}`).openOn(map);
+        return;
+      }
+      handleAddressAutocomplete(q);
+    }
+
+    async function pasteFromClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById('searchInput').value = text;
+        executeSearch();
+      } catch (e) {
+        alert('Pega manualmente en la barra de búsqueda.');
+      }
+    }
+
+    // TASACIÓN Y HONORARIOS
+    function recalcularTodo() {
+      const areaM2 = parseFloat(document.getElementById('statAreaM2')?.innerText) || 0;
+      const valSuelo = parseFloat(document.getElementById('valSueloUF')?.value) || 0;
+      const valConst = parseFloat(document.getElementById('valConstUF')?.value) || 0;
+      const m2Dom = parseFloat(document.getElementById('m2DOM')?.value) || 0;
+      const m2Noreg = parseFloat(document.getElementById('m2NoReg')?.value) || 0;
+      const ufVal = parseFloat(document.getElementById('inputValorUF')?.value) || 38500;
+
+      const tasacionSueloUF = areaM2 * valSuelo;
+      const tasacionConstUF = (m2Dom + (m2Noreg * 0.7)) * valConst;
+      const totalUF = tasacionSueloUF + tasacionConstUF;
+      const totalCLP = totalUF * ufVal;
+
+      document.getElementById('tasacionTotalUF').innerText = totalUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' UF';
+      document.getElementById('tasacionTotalCLP').innerText = '$' + Math.round(totalCLP).toLocaleString('es-CL') + ' CLP';
+
+      const mode = document.getElementById('comisionMode').value;
+      const regimen = document.getElementById('tipoDocComision').value;
+
+      let pctTotal = 0.04;
+      if (mode === 'solo_vendedor' || mode === 'solo_comprador') pctTotal = 0.02;
+
+      let factorImpuesto = 1.0;
+      if (regimen === 'iva') factorImpuesto = 1.19;
+
+      const honorarioNeto = totalCLP * pctTotal;
+      const honorarioTotalCLP = honorarioNeto * factorImpuesto;
+      const honorarioTotalUF = honorarioTotalCLP / ufVal;
+
+      const comisionVendedorCLP = (mode === 'solo_comprador' ? 0 : totalCLP * 0.02) * factorImpuesto;
+      const liquidoVendedorCLP = totalCLP - comisionVendedorCLP;
+      const liquidoVendedorUF = liquidoVendedorCLP / ufVal;
+
+      document.getElementById('comisionTotalCLP').innerText = '$' + Math.round(honorarioTotalCLP).toLocaleString('es-CL') + ' CLP';
+      document.getElementById('comisionTotalUF').innerText = honorarioTotalUF.toFixed(2) + ' UF';
+      document.getElementById('liquidoVendedorCLP').innerText = '$' + Math.round(liquidoVendedorCLP).toLocaleString('es-CL') + ' CLP';
+      document.getElementById('liquidoVendedorUF').innerText = liquidoVendedorUF.toFixed(2) + ' UF';
+    }
+
+    function evaluarAcop() {
+      const checks = document.querySelectorAll('.acop-check');
+      let checked = 0;
+      checks.forEach(c => { if (c.checked) checked++; });
+      const percent = Math.round((checked / checks.length) * 100);
+
+      document.getElementById('acopAuditPercent').innerText = `${percent}%`;
+      document.getElementById('acopProgressBadge').innerText = `${percent}%`;
+      document.getElementById('acopAuditBar').style.width = `${percent}%`;
+    }
+
+    function exportarMinutaA4() {
+      document.getElementById('repFecha').innerText = new Date().toLocaleDateString('es-CL');
+      document.getElementById('repArea').innerText = document.getElementById('statAreaM2').innerText;
+      document.getElementById('repPerim').innerText = document.getElementById('statPerimeter').innerText;
+      document.getElementById('repTasacionUF').innerText = document.getElementById('tasacionTotalUF').innerText;
+      document.getElementById('repTasacionCLP').innerText = document.getElementById('tasacionTotalCLP').innerText;
+
+      document.getElementById('repComisionTotal').innerText = document.getElementById('comisionTotalCLP').innerText;
+      document.getElementById('repLiquidoVendedor').innerText = document.getElementById('liquidoVendedorCLP').innerText;
+      document.getElementById('repModoComision').innerText = document.getElementById('comisionMode').selectedOptions[0].text;
+      document.getElementById('repRegimenComision').innerText = document.getElementById('tipoDocComision').selectedOptions[0].text;
+      document.getElementById('repAcopStatus').innerText = `Cumplimiento de Auditoría ACOP: ${document.getElementById('acopAuditPercent').innerText} de documentos verificados.`;
+
+      let clausula = "El inmueble constituye un polígono irregular de " + document.getElementById('statAreaM2').innerText + ", cuyos deslindes especiales son: ";
+      if (vertices.length > 2) {
+        for (let i = 0; i < vertices.length; i++) {
+          const next = (i + 1) % vertices.length;
+          const dist = calcularDistanciaGeodesica(vertices[i].lat, vertices[i].lng, vertices[next].lat, vertices[next].lng);
+          clausula += `Del Vértice V${i + 1} al V${next + 1} en línea recta de ${dist.toFixed(2)} metros con propiedad vecina; `;
+        }
+      }
+      clausula += "conforme al levantamiento geodésico bajo Datum WGS84.";
+      document.getElementById('repClausulaNotarial').innerText = clausula;
+
+      const element = document.getElementById('notarialReportA4');
+      element.classList.remove('hidden');
+      html2pdf().from(element).set({
+        margin: 10,
+        filename: 'Minuta_Tecnica_GeoPredio.pdf',
+        html2canvas: { scale: 2 },
+        jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+      }).save().then(() => {
+        element.classList.add('hidden');
+      });
+    }
+
+    function enviarWhatsAppResumen() {
+      const area = document.getElementById('statAreaM2').innerText;
+      const tasacion = document.getElementById('tasacionTotalCLP').innerText;
+      const tasacionUF = document.getElementById('tasacionTotalUF').innerText;
+      const comision = document.getElementById('comisionTotalCLP').innerText;
+      const acop = document.getElementById('acopAuditPercent').innerText;
+
+      const texto = `*FICHA TÉCNICA Y AUDITORÍA TERRITORIAL (GeoPredio Chile)*%0A%0A` +
+        `📐 *Cabida Terreno:* ${area}%0A` +
+        `💰 *Tasación Estimada:* ${tasacion} (${tasacionUF})%0A` +
+        `💼 *Honorarios Corredor:* ${comision}%0A` +
+        `📋 *Auditoría Legal ACOP:* ${acop} Verificado%0A%0A` +
+        `_Minuta técnica con georreferenciación lista para notaría y estudio de títulos bancario._`;
+
+      window.open(`https://wa.me/?text=${texto}`, '_blank');
+    }
+
+    function switchTab(tab) {
+      if (tab === 'map') {
+        document.getElementById('sectionMapTab').classList.remove('hidden');
+        document.getElementById('sectionAcopTab').classList.add('hidden');
+        document.getElementById('tabBtnMap').classList.replace('text-slate-400', 'text-white');
+        document.getElementById('tabBtnMap').classList.add('bg-sky-600');
+        document.getElementById('tabBtnAcop').classList.remove('bg-sky-600');
+        document.getElementById('tabBtnAcop').classList.add('text-slate-400');
+        setTimeout(() => map.invalidateSize(), 200);
+      } else {
+        document.getElementById('sectionMapTab').classList.add('hidden');
+        document.getElementById('sectionAcopTab').classList.remove('hidden');
+        document.getElementById('tabBtnAcop').classList.replace('text-slate-400', 'text-white');
+        document.getElementById('tabBtnAcop').classList.add('bg-sky-600');
+        document.getElementById('tabBtnMap').classList.remove('bg-sky-600');
+        document.getElementById('tabBtnMap').classList.add('text-slate-400');
+      }
+    }
+
+    function toggleDronLayer() {
+      if (document.getElementById('chkDron').checked) {
+        dronLayer.addTo(map);
+      } else {
+        map.removeLayer(dronLayer);
+      }
+    }
+
+    function cambiarOpacidadDron(val) {
+      const op = val / 100;
+      dronLayer.setOpacity(op);
+      if (capaOrtofotoLocal) capaOrtofotoLocal.setOpacity(op);
+    }
+
+    function centrarEnGPS() {
+      if (navigator.geolocation) {
+        document.getElementById('gpsStatus').innerText = '...';
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            document.getElementById('gpsStatus').innerText = 'OK';
+            map.flyTo([pos.coords.latitude, pos.coords.longitude], 20);
+          },
+          () => { document.getElementById('gpsStatus').innerText = 'ERR'; }
+        );
+      }
+    }
+
+    function cambiarTipologia(tipo) {
+      const fields = document.getElementById('fieldsEdificacion');
+      if (tipo === 'rural' || tipo === 'urbano') {
+        fields.classList.add('hidden');
+      } else {
+        fields.classList.remove('hidden');
+      }
+      calcularGeodesia();
+      recalcularTodo();
+    }
+  </script>
+</body>
+</html>
