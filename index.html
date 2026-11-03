@@ -24,18 +24,13 @@
     * { font-family: 'Inter', sans-serif; }
     .font-mono { font-family: 'JetBrains Mono', monospace; }
     
-    /* Custom Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0b1120; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #0ea5e9; }
 
-    /* Map Overzoom Smoothness */
     .leaflet-container {
       background-color: #050b14 !important;
-    }
-    .leaflet-tile-container img {
-      image-rendering: auto;
     }
   </style>
 </head>
@@ -111,7 +106,6 @@
                 <polygon points="0,0 15,7 15,18 0,11" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.8" />
                 <polygon points="0,0 -13,7 -13,18 0,11" fill="#94a3b8" stroke="#0f172a" stroke-width="0.8" />
                 <polygon points="0,-8 15,0 0,6 -13,0" fill="#38bdf8" stroke="#0284c7" stroke-width="0.9" />
-                <!-- Door & Window -->
                 <rect x="-6" y="10" width="4" height="6" fill="#0284c7" />
                 <polygon points="4,5 11,8 11,13 4,10" fill="#e0f2fe" opacity="0.9" />
               </g>
@@ -175,12 +169,10 @@
   <!-- MAIN VIEWPORT -->
   <main class="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 flex flex-col gap-3">
     
-    <!-- ========================================== -->
-    <!-- TAB 1: CARTOGRAPHY, APPRAISAL & SURGEON    -->
-    <!-- ========================================== -->
+    <!-- TAB 1: CARTOGRAPHY, APPRAISAL & SURGEON -->
     <div id="viewGeo" class="flex-1 flex flex-col gap-3">
       
-      <!-- Top Search & Quick Coordinates -->
+      <!-- Top Search -->
       <div class="bg-slate-900/90 border border-slate-800 p-2.5 rounded-2xl flex flex-wrap items-center gap-2 shadow-lg">
         <div class="flex-1 min-w-[240px] relative">
           <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
@@ -343,9 +335,7 @@
 
     </div>
 
-    <!-- ========================================== -->
-    <!-- TAB 2: ACOP DUE DILIGENCE BY TYPOLOGY      -->
-    <!-- ========================================== -->
+    <!-- TAB 2: ACOP DUE DILIGENCE BY TYPOLOGY -->
     <div id="viewLegal" class="hidden flex-1 flex flex-col gap-3">
       
       <!-- Typology Selector -->
@@ -358,7 +348,6 @@
           <p class="text-xs text-slate-400 mt-0.5">Selecciona la tipología inmobiliaria para cargar los documentos, aranceles institucionales y honorarios de abogado.</p>
         </div>
 
-        <!-- 4 Typologies Segmented Buttons -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 w-full md:w-auto">
           <button onclick="setTypology('urbano')" id="typeBtn_urbano" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all bg-cyan-600 text-white border-cyan-400 shadow-md">
             1. Urbano
@@ -396,23 +385,19 @@
 
       <!-- Checklist Items Container -->
       <div id="checklistContainer" class="grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto max-h-[600px] pr-1">
-        <!-- Injected via JavaScript based on chosen Typology -->
       </div>
 
     </div>
 
   </main>
 
-  <!-- ========================================== -->
-  <!-- HIDDEN PRINTABLE A4 NOTARIAL REPORT        -->
-  <!-- ========================================== -->
+  <!-- HIDDEN PRINTABLE A4 NOTARIAL REPORT -->
   <div id="notarialA4Report" class="hidden">
     <div style="width: 210mm; min-height: 297mm; padding: 18mm 18mm; background: white; color: #0f172a; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5pt; line-height: 1.45;">
       
       <!-- Report Header with Vector Logo -->
       <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 16px;">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <!-- SVG Logo Replica for Clean Vector Print -->
           <svg width="56" height="56" viewBox="0 0 100 100">
             <polygon points="50,44 90,64 50,86 10,64" fill="#0f172a" stroke="#0284c7" stroke-width="2" />
             <line x1="10" y1="64" x2="50" y2="86" stroke="#eab308" stroke-width="3" />
@@ -421,7 +406,6 @@
             <circle cx="50" cy="86" r="4" fill="#0284c7" />
             <circle cx="50" cy="44" r="4" fill="#0284c7" />
             <text x="66" y="80" font-size="7" fill="#0284c7" font-weight="bold" font-family="monospace">50.0m</text>
-            <!-- Minimal House -->
             <polygon points="48,46 60,52 60,62 48,56" fill="#64748b" />
             <polygon points="48,46 38,52 38,62 48,56" fill="#94a3b8" />
             <polygon points="48,39 60,46 48,52 38,46" fill="#0284c7" />
@@ -479,7 +463,6 @@
       <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;">
         <h3 style="font-size: 10pt; font-weight: bold; color: #0f172a; margin: 0 0 6px 0; text-transform: uppercase;">3. Dictamen de Expediente de Títulos (<span id="pdfTypology">Urbano</span>)</h3>
         <div id="pdfAuditList" style="font-size: 8.5pt; line-height: 1.5; color: #334155;">
-          <!-- Injected dynamically -->
         </div>
       </div>
 
@@ -500,13 +483,11 @@
 
   <!-- APPLICATION CORE SCRIPT -->
   <script>
-    // --- APP STATE & INITIALIZATION ---
     let map, drawnItems, currentPolygon = null;
     let activeVertexIndex = 0;
-    let surgeonStep = 0.000001; // ~10cm in lat/lng degrees
+    let surgeonStep = 0.000001;
     let currentTypology = 'urbano';
 
-    // Typologies Checklist Database with CLP Official Aranceles
     const TYPOLOGIES_DB = {
       urbano: {
         title: "Habitacional Urbano (Casas y Departamentos / Copropiedad)",
@@ -572,7 +553,6 @@
       }
     };
 
-    // User checked state for audit items
     let checkedAudit = {};
 
     window.addEventListener('DOMContentLoaded', () => {
@@ -582,16 +562,13 @@
       recalculateAppraisal();
     });
 
-    // --- LEAFLET MAP & ESRI WORLD IMAGERY (HD 22x OVERZOOM) ---
     function initMap() {
-      // Default to Biobío Region / Concepción coords
       map = L.map('map', {
         center: [-36.8270, -73.0503],
         zoom: 17,
         maxZoom: 22
       });
 
-      // ESRI World Imagery HD with overzoom support
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 22,
         maxNativeZoom: 19,
@@ -600,8 +577,6 @@
 
       drawnItems = new L.FeatureGroup();
       map.addLayer(drawnItems);
-
-      // Create an initial sample appraisal parcel
       createSamplePolygon();
     }
 
@@ -609,7 +584,7 @@
       const center = map.getCenter();
       const lat = center.lat;
       const lng = center.lng;
-      const d = 0.00045; // ~50 meters
+      const d = 0.00045;
 
       const coords = [
         [lat + d, lng - d],
@@ -631,7 +606,6 @@
         fillOpacity: 0.25
       }).addTo(drawnItems);
 
-      // Add clickable vertex markers for the surgeon mode
       coords.forEach((pt, index) => {
         const marker = L.circleMarker(pt, {
           radius: index === activeVertexIndex ? 7 : 5,
@@ -650,12 +624,10 @@
       updatePolygonAndStats();
     }
 
-    // Geodesic Area and Perimeter Calculations (Haversine Formula)
     function updatePolygonAndStats() {
       if (!currentPolygon) return;
       const latlngs = currentPolygon.getLatLngs()[0];
       
-      // Calculate Area (spherical approximation)
       let area = 0;
       if (latlngs.length > 2) {
         for (let i = 0; i < latlngs.length; i++) {
@@ -665,7 +637,6 @@
         area = Math.abs(area) * 0.5 * 111319.49 * 111319.49 * Math.cos(latlngs[0].lat * (Math.PI / 180));
       }
 
-      // Calculate Perimeter
       let perimeter = 0;
       for (let i = 0; i < latlngs.length; i++) {
         const j = (i + 1) % latlngs.length;
@@ -680,7 +651,6 @@
       recalculateAppraisal();
     }
 
-    // --- SURGEON D-PAD CONTROLS ---
     function setSurgeonStep(step, label) {
       surgeonStep = step;
       document.getElementById('stepDisplay').innerText = label;
@@ -701,7 +671,6 @@
       setPolygonCoords(rawCoords);
     }
 
-    // --- LOCAL DRONE ORTHOPHOTO OVERLAY ---
     function handleOrthoUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -716,12 +685,10 @@
       reader.readAsDataURL(file);
     }
 
-    // --- SEARCH CHILEAN LOCATIONS VIA NOMINATIM ---
     async function searchChileanLocation() {
       const q = document.getElementById('searchInput').value.trim();
       if (!q) return;
 
-      // Check if coordinates
       if (q.includes(',')) {
         const parts = q.split(',').map(s => parseFloat(s.trim()));
         if (!isNaN(parts[0]) && !isNaN(parts[1])) {
@@ -766,7 +733,6 @@
       }
     }
 
-    // --- PARAMETRIC VALUATION & BROKERAGE COMMISSIONS ---
     function calculateFromUf() {
       const ufVal = parseFloat(document.getElementById('ufValueInput').value) || 38500;
       const unitUf = parseFloat(document.getElementById('unitUfInput').value) || 0;
@@ -793,7 +759,6 @@
       document.getElementById('totalUf').innerText = totalUf.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' UF';
       document.getElementById('totalClp').innerText = '$ ' + totalClp.toLocaleString('es-CL') + ' CLP';
 
-      // Commissions 2% buyer + 2% seller + 19% IVA
       const comm2pct = Math.round(totalClp * 0.02);
       const subtotalComm = comm2pct * 2;
       const iva = Math.round(subtotalComm * 0.19);
@@ -805,7 +770,6 @@
       document.getElementById('totalCommission').innerText = '$' + totalComm.toLocaleString('es-CL') + ' CLP';
     }
 
-    // --- TAB TOGGLE & ACOP SEGREGATION ---
     function switchMainTab(tab) {
       if (tab === 'geo') {
         document.getElementById('viewGeo').classList.remove('hidden');
@@ -881,7 +845,6 @@
       renderChecklist();
     }
 
-    // --- WHATSAPP APPRAISAL SHARE ---
     function shareViaWhatsApp() {
       const area = document.getElementById('polyArea').innerText;
       const totalUf = document.getElementById('totalUf').innerText;
@@ -901,7 +864,6 @@
       window.open(`https://api.whatsapp.com/send?text=${msg}`, '_blank');
     }
 
-    // --- SINGLE-CLICK A4 NOTARIAL DEED GENERATION ---
     function generateNotarialPDF() {
       document.getElementById('pdfDate').innerText = new Date().toLocaleDateString('es-CL');
       document.getElementById('pdfAddress').innerText = document.getElementById('searchInput').value || "Sector Evaluado en Terreno";
@@ -915,7 +877,6 @@
       document.getElementById('pdfBrokTotal').innerText = document.getElementById('totalCommission').innerText;
       document.getElementById('pdfTypology').innerText = TYPOLOGIES_DB[currentTypology].title;
 
-      // Extract vertex coordinates
       if (currentPolygon) {
         const pts = currentPolygon.getLatLngs()[0];
         let coordsStr = "";
@@ -925,7 +886,6 @@
         document.getElementById('pdfCoords').innerText = coordsStr;
       }
 
-      // Populate Audit items in PDF
       const data = TYPOLOGIES_DB[currentTypology];
       let auditHtml = `<ul style="list-style: none; padding: 0; margin: 0;">`;
       data.items.forEach(it => {
